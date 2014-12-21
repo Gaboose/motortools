@@ -10,11 +10,13 @@ class ROSCom:
 
     class Hardware:
 
-        def __init__(self):
-            self._pub = None
+        _pub = None
 
         def set_topic(self, val):
+            self.drop()
             self._topic = val
+
+        def drop(self):
             if self._pub:
                 self._pub.unregister()
                 self._pub = None
@@ -36,7 +38,7 @@ class ROSCom:
         def send(self, angle):
             if not self._pub:
                 self._pub = rospy.Publisher(self._topic, servo_pololu,
-                                            queue_size=1)
+                                            queue_size=10)
             self._pub.publish(servo_pololu(self._motorid, angle,
                                            self.SPEED, self.ACCELERATION))
 
@@ -44,15 +46,20 @@ class ROSCom:
 
         def send(self, angle):
             if not self._pub:
-                self._pub = rospy.Publisher(self._topic, Float64, queue_size=1)
+                self._pub = rospy.Publisher(self._topic, Float64, queue_size=10)
 
             self._pub.publish(angle)
 
     def __init__(self):
         self._pub = None
+        self.hardware = None
         rospy.init_node('interactive_ctrl')
 
     def set_hardware(self, name):
+        if self.hardware:
+            self.hardware.drop()
+            self.hardware = None
+
         name = name.lower()
         if 'pol' in name:
             self.hardware = self.Pololu()
