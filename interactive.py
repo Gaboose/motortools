@@ -4,26 +4,64 @@ from helpers import getch
 
 import rospy
 from std_msgs.msg import Float64
+from ros_pololu_servo.msg import servo_pololu
 
 class ROSCom:
+
+    class Hardware:
+
+        def __init__(self):
+            self._pub = None
+
+        def set_topic(self, val):
+            self._topic = val
+            if self._pub:
+                self._pub.unregister()
+                self._pub = None
+
+        # def setmotorid(self, val)
+        set_motorid = NotImplemented
+
+        def send(self, angle):
+            raise NotImplementedError
+
+    class Pololu(Hardware):
+
+        SPEED = 50
+        ACCELERATION = 10
+
+        def set_motorid(self, val):
+            self._motorid = int(val)
+
+        def send(self, angle):
+            if not self._pub:
+                self._pub = rospy.Publisher(self._topic, servo_pololu,
+                                            queue_size=1)
+            self._pub.publish(servo_pololu(self._motorid, angle,
+                                           self.SPEED, self.ACCELERATION))
+
+    class Dynamixel(Hardware):
+
+        def send(self, angle):
+            if not self._pub:
+                self._pub = rospy.Publisher(self._topic, Float64, queue_size=1)
+
+            self._pub.publish(angle)
 
     def __init__(self):
         self._pub = None
         rospy.init_node('interactive_ctrl')
 
-    @property
-    def motorid(self):
-        return self._motorid
+    def set_hardware(self, name):
+        name = name.lower()
+        if 'pol' in name:
+            self.hardware = self.Pololu()
+            return 'Pololu'
+        elif 'dyn' in name or 'dxl' in name:
+            self.hardware = self.Dynamixel()
+            return 'Dynamixel'
+        return None
 
-    @motorid.setter
-    def motorid(self, val):
-        self._motorid = val
-        if self._pub:
-            self._pub.unregister()
-        self._pub = rospy.Publisher("%s/command" % val, Float64, queue_size=1)
-
-    def send(self, angle):
-        self._pub.publish(angle)
 
 class UserInterface:
 
@@ -40,16 +78,24 @@ class UserInterface:
         self.seldigit = 0 # selected digit
 
     def spin(self):
-        self._askmotor()
+        self._askall()
 
         while True:
+            self.com.hardware.send(self.val)
             self._printcursor()
-            self.com.send(self.val)
-            
+
             key = self._getkey()
 
             if key.lower() == 'q':
                 break
+            elif key.lower() == 'h':
+                self._askall()
+            elif key.lower() == 't':
+                self._asktopic()
+                self._askangle()
+            elif key.lower() == 'm':
+                self._askmotor()
+                self._askangle()
             elif key == self.UP:
                 self._increase()
             elif key == self.DOWN:
@@ -59,11 +105,30 @@ class UserInterface:
             elif key == self.LEFT:
                 self._greater_digit()
 
-            self._printcursor()
+    def _askall(self):
+        self._askhardware()
+        self._asktopic()
+        self._askmotor()
+        self._askangle()
+
+    def _askhardware(self):
+        recognizedname = None
+        while not recognizedname:
+            recognizedname = self.com.set_hardware(input('Dynamixel or Pololu? '))
+        print('Using %s' % recognizedname)
+
+    def _asktopic(self):
+        self.com.hardware.set_topic(input('Enter publisher topic: '))
 
     def _askmotor(self):
-        self.com.motorid = input('Enter Motor ID: ')
+        if self.com.hardware.set_motorid == NotImplemented:
+            print('No motor id required')
+        else:
+            self.com.hardware.set_motorid(input('Enter motor id: '))
+
+    def _askangle(self):
         self.val = float(input('Enter Initial Angle: '))
+
 
     def _printcursor(self):
 
