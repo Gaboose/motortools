@@ -2,6 +2,29 @@
 
 from helpers import getch
 
+import rospy
+from std_msgs.msg import Float64
+
+class ROSCom:
+
+    def __init__(self):
+        self._pub = None
+        rospy.init_node('interactive_ctrl')
+
+    @property
+    def motorid(self):
+        return self._motorid
+
+    @motorid.setter
+    def motorid(self, val):
+        self._motorid = val
+        if self._pub:
+            self._pub.unregister()
+        self._pub = rospy.Publisher("%s/command" % val, Float64, queue_size=1)
+
+    def send(self, angle):
+        self._pub.publish(angle)
+
 class UserInterface:
 
     UP = '\x1b[A'
@@ -9,16 +32,20 @@ class UserInterface:
     RIGHT = '\x1b[C'
     LEFT = '\x1b[D'
 
-    def __init__(self):
+    def __init__(self, com):
+        self.com = com # network communication interface
+
         self.motorid = None
         self.val = None # current angle/value
         self.seldigit = 0 # selected digit
 
     def spin(self):
         self._askmotor()
-        self._printcursor()
 
         while True:
+            self._printcursor()
+            self.com.send(self.val)
+            
             key = self._getkey()
 
             if key.lower() == 'q':
@@ -35,7 +62,7 @@ class UserInterface:
             self._printcursor()
 
     def _askmotor(self):
-        self.motorid = int(input('Enter Motor ID: '))
+        self.com.motorid = input('Enter Motor ID: ')
         self.val = float(input('Enter Initial Angle: '))
 
     def _printcursor(self):
@@ -97,4 +124,5 @@ class UserInterface:
 
 
 if __name__ == '__main__':
-    UserInterface().spin()
+    com = ROSCom()
+    UserInterface(com).spin()
